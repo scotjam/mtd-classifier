@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Packaging
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Never commit real financial data or the local app database
+*.db
+gui_accounts.json
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Local-only tests containing real personal figures - never commit
+tests/private/

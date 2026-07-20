@@ -1,0 +1,28 @@
+Account: Mr J Smith
+Sort Code: 09-01-23
+Account Number: 12345678
+
+Date: 15/04/2026
+Description: ACME CORP SALARY
+Amount: 2500.00 GBP
+Balance: 5000.00 GBP
+
+Date: 16/04/2026
+Description: TESCO STORES
+Amount: -45.67 GBP
+Balance: 4954.33 GBP
+
+Date: 17/04/2026
+Description: MORTGAGE PAYMENT
+Amount: -850.00 GBP
+Balance: 4104.33 GBP
+
+Date: 20/04/2026
+Description: TRANSFER TO SAVINGS
+Amount: -500.00 GBP
+Balance: 3588.34 GBP
+
+Date: 22/04/2026
+Description: ACME LETTING AGENTS FEE
+Amount: -150.00 GBP
+Balance: 3438.34 GBP
