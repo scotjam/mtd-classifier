@@ -163,3 +163,8 @@ that is a courtesy, not a substitute for your own judgement about what you share
 If this saved you some time or money, donations are very welcome:
 
 **BTC:** `bc1qwafw8nxmjkr6p3tajmrqfdn2wnj93g9ysnydpk`
+
+The installer is currently unsigned, so Windows SmartScreen shows an "unrecognized
+app" warning on first run (click "More info" → "Run anyway"). If I get enough
+donations I will buy a code-signing certificate, which — as signed downloads build
+reputation with Microsoft — will over time get rid of the installation warnings.
