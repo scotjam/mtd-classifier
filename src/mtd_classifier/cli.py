@@ -932,9 +932,17 @@ def bridge(
             f"are NOT included. Run 'mtd review' first.[/yellow]"
         )
 
-    result = export_bridging_templates(
-        cat_txns, output_dir, tq.label, forms=forms, tax_year=tq.tax_year,
-    )
+    from mtd_classifier.export.template_fetch import TemplateError
+
+    try:
+        result = export_bridging_templates(
+            cat_txns, output_dir, tq.label, forms=forms, tax_year=tq.tax_year,
+        )
+    except TemplateError as e:
+        # First use downloads My Tax Digital's own template files (they are
+        # not bundled with this app)
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
     table = Table(title="Figures written to templates (cumulative year-to-date)")
     table.add_column("Form")

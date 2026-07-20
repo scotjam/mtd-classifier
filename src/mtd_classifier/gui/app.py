@@ -2501,9 +2501,17 @@ class SummaryTab(ttk.Frame):
             parent=self,
         ):
             return
-        result = export_bridging_templates(
-            cat_txns, Path(out_dir), tq.label, tax_year=tq.tax_year,
-        )
+        from mtd_classifier.export.template_fetch import TemplateError
+
+        try:
+            result = export_bridging_templates(
+                cat_txns, Path(out_dir), tq.label, tax_year=tq.tax_year,
+            )
+        except TemplateError as e:
+            # First use needs one download of My Tax Digital's own template
+            # files (they are not bundled with this app)
+            messagebox.showerror("Bridging template unavailable", str(e), parent=self)
+            return
         if not result.files_written:
             messagebox.showinfo(
                 "Nothing to export",

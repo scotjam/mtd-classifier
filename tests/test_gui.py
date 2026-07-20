@@ -634,7 +634,7 @@ def test_employment_income_apply_reminds_in_status_not_modal(seeded_repo, tmp_pa
         app.destroy()
 
 
-def test_bridging_reminds_about_unconfirmed_employment_income(repo, tmp_path):
+def test_bridging_reminds_about_unconfirmed_employment_income(bridging_templates, repo, tmp_path):
     from mtd_classifier.periods import TaxQuarter
 
     log = repo.create_import_log(
@@ -1680,7 +1680,7 @@ def _generate_bridging_with_patches(app, out_dir):
     return guide
 
 
-def test_submission_guide_auto_opens_after_bridging(repo, tmp_path):
+def test_submission_guide_auto_opens_after_bridging(bridging_templates, repo, tmp_path):
     from mtd_classifier.periods import TaxQuarter
 
     log = repo.create_import_log(

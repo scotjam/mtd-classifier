@@ -22,17 +22,13 @@ from typing import Sequence
 
 import openpyxl
 
+from mtd_classifier.export.template_fetch import get_template
 from mtd_classifier.models.category import (
     ALWAYS_DISALLOWABLE_CATEGORIES,
     TransactionCategory,
     rent_a_room_limit,
 )
 from mtd_classifier.models.transaction import RawTransaction, CategorisedTransaction
-
-TEMPLATE_DIR = Path(__file__).parent / "templates"
-
-SA103_TEMPLATE = TEMPLATE_DIR / "MTD_SA103_template.xlsx"
-SA105_TEMPLATE = TEMPLATE_DIR / "MTD_SA105_template.xlsx"
 
 
 @dataclass(frozen=True)
@@ -293,8 +289,14 @@ def fill_template(
     box_totals: dict[str, BoxTotal],
     output_path: Path,
 ) -> Path:
-    """Copy the official template and write box values into it."""
-    template = SA103_TEMPLATE if form == "SA103" else SA105_TEMPLATE
+    """Copy the official template and write box values into it.
+
+    The template is downloaded from mytaxdigital.co.uk on first use and
+    cached (see template_fetch - the templates are My Tax Digital's own
+    files and are not redistributed with this app). May raise
+    TemplateDownloadError / TemplateLayoutError.
+    """
+    template = get_template(form)
     wb = openpyxl.load_workbook(template)
     ws = wb.worksheets[0]
 
