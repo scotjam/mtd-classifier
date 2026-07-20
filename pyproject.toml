@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mtd-classifier"
+version = "0.1.0"
+description = "Bank transaction classifier for Making Tax Digital quarterly filing"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9.0",
+    "sqlalchemy>=2.0",
+    "ofxtools>=0.9",
+    "rich>=13.0",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "xlrd>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "xlwt>=1.3",  # writes .xls fixtures for the legacy-format importer tests
+]
+
+[project.scripts]
+mtd = "mtd_classifier.cli:app"
+
+[project.gui-scripts]
+mtd-gui = "mtd_classifier.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mtd_classifier = ["export/templates/*.xlsx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
