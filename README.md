@@ -1,0 +1,98 @@
+# MTD Classifier
+
+An open-source (GPL-3.0) **Making Tax Digital companion** for UK sole traders and
+landlords. It turns your bank statements into the cumulative quarterly figures HMRC
+requires, and writes them into spreadsheets in the exact format required by free
+bridging software such as [MyTaxDigital.com](https://mytaxdigital.co.uk) — so you can
+review, upload, and submit without paying for MTD software or an accountant.
+
+I used it for my own MTD Income Tax Q1 2026-27 submission, cross-checked every figure,
+and in my circumstances it worked correctly. With this plus the My Tax Digital website,
+I didn't need to pay my accountant to do MTD for me.
+
+## ⚠️ Provided as-is — cross-check everything
+
+This software is provided **as-is, with no warranty of any kind**. Until it has proven
+itself for *your* use case, make sure **every figure is cross-checked and verified
+correct before submitting anything to HMRC**. The authors are **not responsible for any
+errors or omissions**. The app is built to make that cross-checking easy (double-click
+any total to see the exact transactions behind it, and it warns you when a period's
+statements can't be verified as complete) — use those features before every submission.
+
+## What it does
+
+- **Imports bank statements** in CSV, OFX, XLSX, XLS (including the HTML-tables-saved-as-
+  .xls that some banks call "Excel"), and text-based PDF formats. Unrecognised tabular
+  layouts go through a guided column-mapping dialog and are remembered. Re-importing is
+  safe: files and duplicate transactions are detected and skipped, and imports can be
+  undone.
+- **Categorises transactions** against the full SA103F (self-employment) and SA105
+  (UK property) box sets — including allowable/disallowable expense splits, tax deducted
+  at source (CIS / Non-resident Landlord), and automatic Rent-a-Room exemption
+  derivation. Hover any category for condensed HMRC guidance on what belongs in it.
+- **Auto-classify learns from you.** Every category you set by hand becomes a rule, so
+  after you've classified one "PLUMBER J SMITH" the next hundred classify themselves.
+  In my experience this is the feature that saves the most time.
+- **Verifies completeness** before HMRC output: an unbroken running-balance chain, or
+  agreement between two independent sources (PDF statements vs CSV/XLS exports), proves
+  a quarter's data is complete.
+- **Generates bridging spreadsheets** — the official My Tax Digital SA103/SA105
+  templates filled with cumulative year-to-date figures (HMRC requires cumulative, not
+  per-quarter), including the disallowable-expenses column.
+- **Estimates your tax** with a full personal computation (all income sources, personal
+  allowance taper, mortgage-interest relief phase-in, Gift Aid band widening,
+  Class 2/4 NIC) using verified historical rates back to 2006-07.
+- **Guides you through submission**: a first-run tour of the app, and a step-by-step
+  "How to Submit" walkthrough covering registering your businesses with HMRC, Bridging
+  mode, picking the right obligation, and the traps (the upload's "to" date defaults to
+  today instead of the quarter end; a submitted obligation cannot be amended).
+- **Keeps users separate**: multiple users, each with fully isolated data, and receipt/
+  invoice attachments per transaction.
+
+## What it does NOT do
+
+- **No VAT.** It only calculates **self-employment and property income tax** figures
+  for MTD for Income Tax.
+- It does not submit to HMRC directly — it produces the spreadsheets you upload through
+  bridging software (that's the point: the bridging layer stays free).
+- Employment income, interest, dividends and Gift Aid are tracked for the year-end
+  final declaration and the in-app tax estimate, but are never part of quarterly
+  updates (HMRC already gets employment income via PAYE).
+
+## Getting started
+
+Requires Python 3.10+ (developed on Windows; it's plain Python + Tkinter, so porting
+to Linux/macOS would not be hard — it just hasn't been tested there).
+
+```
+git clone https://github.com/scotjam/mtd-classifier
+cd mtd-classifier
+pip install -e .
+pip install pillow   # optional: nicer rounded UI surfaces
+mtd-gui
+```
+
+On Windows you can also just double-click `launch_gui.bat`, which installs and launches
+in one step. A detailed interactive tutorial runs on first launch (re-run it any time
+from the Help button), and there's a CLI too — try `mtd --help`.
+
+The typical quarter: import your statements (or point "Import Folder..." at a folder of
+them) → Auto-classify → review the highlighted uncategorised lines → check the Summary
+tab → Generate Bridging Files → follow the How to Submit guide → cross-check every
+figure on the My Tax Digital review screen against the Summary tab → Submit.
+
+## License
+
+[GPL-3.0](LICENSE). Contributions welcome.
+
+## Donations
+
+If this saved you some time or money, donations are very welcome:
+
+**BTC:** `bc1qwafw8nxmjkr6p3tajmrqfdn2wnj93g9ysnydpk`
+
+**Lightning:**
+
+```
+lnbc1p49umz2pp5gpj4wkyxyqsltw2kjfrl7yu28u7w4hgwk4pzaqht6w96j3wardvssp5vn5625xl0r3q9t4a9rvhrw7x38pqcgrjmzpkysjhfzzyud762k8sdqqcqzynxqyz5vq9qlzqqqqqqqqqqqqqqqqqqqqqqqqqqysgqrzjq0kw7e6mu3ytv90xzajzgpcxw0hc9p8ql5va30sx9fkttvfs5zsdzq8qxvm7fwf6fgqqqqlgqqqqqeqqjqgz23u4pppyrvu76f0mwm83ujsss8gsgaa0a3w5cw06rcczd5rw686sddqqny9dnffdjdm3657z5kedhz8q3nav6tykcl3ktjjqfz6rspqdca3h
+```
