@@ -105,6 +105,20 @@ a submitted obligation cannot be amended.
 
 ## Getting started
 
+### Windows installer (no Python required)
+
+Download `mtd-classifier-setup-<version>.exe` from the
+[releases page](https://github.com/scotjam/mtd-classifier/releases) and run it.
+It installs per-user (no admin rights needed), bundles everything including Python,
+adds a Start Menu entry, and uninstalls cleanly from Settings → Apps — your data in
+`~/.mtd-classifier` survives an uninstall or upgrade. Tested on Windows 11.
+
+To build the installer yourself: install a python.org CPython 3.10+ and Inno Setup 6
+(`winget install JRSoftware.InnoSetup`), then run
+`powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1`.
+
+### From source
+
 Requires Python 3.10+ (developed on Windows; it's plain Python + Tkinter, so porting
 to Linux/macOS would not be hard — it just hasn't been tested there).
 
