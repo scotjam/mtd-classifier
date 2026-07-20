@@ -168,3 +168,4 @@ The installer is currently unsigned, so Windows SmartScreen shows an "unrecogniz
 app" warning on first run (click "More info" → "Run anyway"). If I get enough
 donations I will buy a code-signing certificate, which — as signed downloads build
 reputation with Microsoft — will over time get rid of the installation warnings.
+Donations will also cover the ongoing subscription costs of keeping it signed.
