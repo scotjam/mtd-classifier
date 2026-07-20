@@ -10,6 +10,10 @@ I used it for my own MTD Income Tax Q1 2026-27 submission, cross-checked every f
 and in my circumstances it worked correctly. With this plus the My Tax Digital website,
 I didn't need to pay my accountant to do MTD for me.
 
+**MTD Classifier is an independent project.** It is not affiliated with, or endorsed
+by, HMRC or My Tax Digital (a free service by Open Answers Ltd) — it simply produces
+files in the format their bridging import accepts.
+
 ## ⚠️ Provided as-is — cross-check everything
 
 This software is provided **as-is, with no warranty of any kind**. Until it has proven

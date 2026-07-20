@@ -391,7 +391,10 @@ SUBMISSION_STEPS: "list[tuple[str, str, list[tuple[str, str]]]]" = [
         "Log in to My Tax Digital and authorise it with HMRC when prompted "
         "(a one-time grant through your Government Gateway sign-in).\n\n"
         "Choose 'Business income' - the businesses you registered with HMRC "
-        "in step 1 appear there automatically.",
+        "in step 1 appear there automatically.\n\n"
+        "Note: My Tax Digital is Open Answers Ltd's own free service. This "
+        "app is an independent project and is not affiliated with, or "
+        "endorsed by, My Tax Digital or HMRC.",
         [
             ("My Tax Digital - log in", "https://mytaxdigital.co.uk/app"),
             ("My Tax Digital - about", "https://mytaxdigital.co.uk"),
