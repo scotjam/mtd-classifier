@@ -1,9 +1,10 @@
 # Builds the standalone Windows installer.
 #
-# Requires: a python.org CPython 3.10+ (NOT the Microsoft Store build - its
-# sandboxed Tcl/Tk breaks freezing) and Inno Setup 6 (winget install
-# JRSoftware.InnoSetup). Run from anywhere:
-#   powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
+# Requires: PowerShell 7+ (pwsh - Windows PowerShell 5.1 treats pip's
+# stderr warnings as fatal), a python.org CPython 3.10+ (NOT the Microsoft
+# Store build - its sandboxed Tcl/Tk breaks freezing) and Inno Setup 6
+# (winget install JRSoftware.InnoSetup). Run from anywhere:
+#   pwsh -ExecutionPolicy Bypass -File installer\build_installer.ps1
 #
 # Output: build\dist\mtd-classifier-setup-<version>.exe
 

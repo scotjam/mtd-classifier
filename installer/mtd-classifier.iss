@@ -5,7 +5,7 @@
 ; Produces build\dist\mtd-classifier-setup-<version>.exe
 
 #define MyAppName "MTD Classifier"
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.2"
 #define MyAppExeName "MTD Classifier.exe"
 #define MyAppURL "https://github.com/scotjam/mtd-classifier"
 
