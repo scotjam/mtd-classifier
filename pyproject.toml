@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtd-classifier"
-version = "0.1.1"
+version = "0.1.2"
 description = "Bank transaction classifier for Making Tax Digital quarterly filing"
 readme = "README.md"
 license = {text = "GPL-3.0-only"}
