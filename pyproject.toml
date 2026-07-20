@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mtd-classifier"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bank transaction classifier for Making Tax Digital quarterly filing"
 readme = "README.md"
 license = {text = "GPL-3.0-only"}
@@ -17,6 +17,8 @@ dependencies = [
     "openpyxl>=3.1",
     "pdfplumber>=0.11",
     "xlrd>=2.0",
+    # template download through AV/corporate TLS interception (OS trust store)
+    "truststore>=0.8",
 ]
 
 [project.optional-dependencies]
@@ -34,9 +36,6 @@ mtd-gui = "mtd_classifier.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-mtd_classifier = ["export/templates/*.xlsx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

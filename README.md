@@ -82,7 +82,12 @@ a submitted obligation cannot be amended.
   a quarter's data is complete.
 - **Generates bridging spreadsheets** — the official My Tax Digital SA103/SA105
   templates filled with cumulative year-to-date figures (HMRC requires cumulative, not
-  per-quarter), including the disallowable-expenses column.
+  per-quarter), including the disallowable-expenses column. The templates are My Tax
+  Digital's own files (HMRC publishes no bridging templates), so they are not bundled:
+  the app downloads them from mytaxdigital.co.uk on first use (internet needed once),
+  caches them, and verifies them against a pinned SHA-256 — if the vendor ever changes
+  the template layout, the export stops and asks for an app update instead of risking
+  figures landing in the wrong boxes.
 - **Estimates your tax** with a full personal computation (all income sources, personal
   allowance taper, mortgage-interest relief phase-in, Gift Aid band widening,
   Class 2/4 NIC) using verified historical rates back to 2006-07.

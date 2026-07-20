@@ -147,7 +147,7 @@ def test_disallowable_property_expense_left_out_of_sa105_box():
     assert totals["SA105:C25"].disallowable == 0.0
 
 
-def test_disallowable_written_into_template_file(tmp_path):
+def test_disallowable_written_into_template_file(bridging_templates, tmp_path):
     txns = [
         _txn("INVOICE", 10000.0, "self_employed_income", 1),
         _txn("FUEL", -300.0, "se_travel", 2),
@@ -254,7 +254,7 @@ def test_migration_adds_disallowable_column_to_legacy_db():
 
 # --- Rent-a-Room exemption (box 37, derived from box 20c) --------------------
 
-def test_rent_a_room_exemption_auto_filled_from_receipts(tmp_path):
+def test_rent_a_room_exemption_auto_filled_from_receipts(bridging_templates, tmp_path):
     txns = [_txn("LODGER RENT", 5000.0, "rent_a_room_income", 1)]
     result = export_bridging_templates(txns, tmp_path, "Q2-2026", tax_year=2026)
     box37 = result.box_totals["SA105:I33"]
@@ -264,13 +264,13 @@ def test_rent_a_room_exemption_auto_filled_from_receipts(tmp_path):
     assert ws["I33"].value == pytest.approx(5000.0)   # box 37 exemption
 
 
-def test_rent_a_room_exemption_capped_at_annual_limit(tmp_path):
+def test_rent_a_room_exemption_capped_at_annual_limit(bridging_templates, tmp_path):
     txns = [_txn("LODGER RENT", 9000.0, "rent_a_room_income", 1)]
     result = export_bridging_templates(txns, tmp_path, "Q4-2026", tax_year=2026)
     assert result.box_totals["SA105:I33"].amount == 7500.0
 
 
-def test_no_rent_a_room_receipts_no_box_37(tmp_path):
+def test_no_rent_a_room_receipts_no_box_37(bridging_templates, tmp_path):
     txns = [_txn("RENT", 900.0, "rental_income", 1)]
     result = export_bridging_templates(txns, tmp_path, "Q1-2026", tax_year=2026)
     assert "SA105:I33" not in result.box_totals

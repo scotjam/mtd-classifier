@@ -8,8 +8,6 @@ import pytest
 
 from mtd_classifier.models.transaction import RawTransaction, CategorisedTransaction
 from mtd_classifier.export.mytaxdigital import (
-    SA103_TEMPLATE,
-    SA105_TEMPLATE,
     aggregate_box_totals,
     export_bridging_templates,
 )
@@ -47,9 +45,33 @@ def sample_transactions():
     return [_txn(d, desc, amount, cat, i) for i, (d, desc, amount, cat) in enumerate(data)]
 
 
-def test_templates_bundled():
-    assert SA103_TEMPLATE.exists()
-    assert SA105_TEMPLATE.exists()
+def test_templates_download_and_validate(bridging_templates):
+    """Templates are NOT bundled (they're My Tax Digital's own files) -
+    they download on first use, cache, and match this release's pinned
+    SHA-256 and layout anchors."""
+    from mtd_classifier.export.template_fetch import validate_template
+
+    for form, path in bridging_templates.items():
+        assert path.exists()
+        validate_template(form, path)  # hash + anchors match the cell map
+
+
+def test_changed_template_refuses_with_update_message(bridging_templates, tmp_path):
+    """If mytaxdigital.co.uk ever publishes a different template, the hash
+    pin must stop the export and ask for an app update - never fill an
+    unverified layout."""
+    from mtd_classifier.export.template_fetch import (
+        TemplateChangedError,
+        validate_template,
+    )
+
+    tampered = tmp_path / "MTD_SA103_template.xlsx"
+    data = bytearray(bridging_templates["SA103"].read_bytes())
+    data[-1] ^= 0xFF
+    tampered.write_bytes(bytes(data))
+    with pytest.raises(TemplateChangedError) as excinfo:
+        validate_template("SA103", tampered)
+    assert "update the app" in str(excinfo.value)
 
 
 def test_aggregate_income_and_expense_signs(sample_transactions):
@@ -77,7 +99,7 @@ def test_letting_agent_and_legal_fees_share_box_27(sample_transactions):
     assert bt.transaction_count == 2
 
 
-def test_export_writes_values_into_template_cells(sample_transactions, tmp_path):
+def test_export_writes_values_into_template_cells(bridging_templates, sample_transactions, tmp_path):
     result = export_bridging_templates(sample_transactions, tmp_path, "Q1-2026")
 
     assert len(result.files_written) == 2
@@ -100,14 +122,14 @@ def test_export_writes_values_into_template_cells(sample_transactions, tmp_path)
     assert ws105["C42"].value == pytest.approx(850.00)
 
 
-def test_export_single_form_only(sample_transactions, tmp_path):
+def test_export_single_form_only(bridging_templates, sample_transactions, tmp_path):
     result = export_bridging_templates(
         sample_transactions, tmp_path, "Q1-2026", forms=("SA103",)
     )
     assert [p.name for p in result.files_written] == ["MTD_SA103_Q1-2026_cumulative.xlsx"]
 
 
-def test_export_skips_form_with_no_data(tmp_path):
+def test_export_skips_form_with_no_data(bridging_templates, tmp_path):
     txns = [_txn(date(2026, 4, 20), "INVOICE", 100.0, "self_employed_income", 1)]
     result = export_bridging_templates(txns, tmp_path, "Q1-2026")
     assert [p.name for p in result.files_written] == ["MTD_SA103_Q1-2026_cumulative.xlsx"]
