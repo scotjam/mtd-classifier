@@ -16,10 +16,17 @@ if (-not (Test-Path "build\venv\Scripts\python.exe")) {
     py -3 -m venv build\venv
 }
 & build\venv\Scripts\python.exe -m pip install --quiet --upgrade pip
+# clean reinstall so files removed from the package can't linger in the
+# bundle - including setuptools' stale build\lib tree, which silently
+# re-packages deleted files into every wheel built from it
+Remove-Item -Recurse -Force build\lib, src\mtd_classifier.egg-info -ErrorAction SilentlyContinue
+& build\venv\Scripts\pip.exe uninstall --quiet -y mtd-classifier 2>$null
 & build\venv\Scripts\pip.exe install --quiet . pillow pyinstaller
 
-# 2. Freeze the app (one-dir, windowed)
-& build\venv\Scripts\pyinstaller.exe --distpath build\dist --workpath build\work -y installer\mtd_classifier.spec
+# 2. Freeze the app (one-dir, windowed). --clean and a fresh dist dir stop
+#    stale files from previous builds surviving in the bundle.
+Remove-Item -Recurse -Force build\dist\mtd-classifier -ErrorAction SilentlyContinue
+& build\venv\Scripts\pyinstaller.exe --clean --distpath build\dist --workpath build\work -y installer\mtd_classifier.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
 # 3. Compile the installer
