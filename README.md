@@ -19,6 +19,50 @@ errors or omissions**. The app is built to make that cross-checking easy (double
 any total to see the exact transactions behind it, and it warns you when a period's
 statements can't be verified as complete) — use those features before every submission.
 
+## Screenshots
+
+All screenshots show invented example data.
+
+### The transaction ledger
+
+![Transaction list](docs/screenshots/transactions.png)
+
+One consolidated, colour-coded list per bank account: money in is green, refunds are
+highlighted and net against the original's HMRC box, and uncategorised lines stay
+yellow until you deal with them. Type in the search box to filter as you type, click
+any column heading to sort, and right-click a line for the quick menu — filter to
+similar transactions, categorise (with HMRC guidance tooltips on hover), pair a
+refund, mark an expense disallowable, or delete. The panel below shows the original
+statement line behind whatever you select, plus receipt attachments.
+
+### Summary & Bridging
+
+![Summary and bridging](docs/screenshots/summary.png)
+
+Your quarterly totals per HMRC box across all accounts, with a full-year projection
+column. Double-click any figure to drill into the exact transactions behind it — the
+cross-checking tool you should use before every submission. The toolbar's
+"Up to quarter" selector drives the cumulative export, and greys out quarters whose
+data isn't complete yet. "Generate Bridging Files" writes the My Tax Digital
+templates from here.
+
+### Tax Calculation
+
+![Tax calculation](docs/screenshots/tax-calculation.png)
+
+A full personal tax computation in the style of an accountant's printout — income by
+source, personal allowance (with taper), tax bands, mortgage-interest relief and
+Class 2/4 NIC — as a full-year estimate plus a pro-forma year-to-date share.
+
+### Guided submission
+
+![Submission guide](docs/screenshots/submission-guide.png)
+
+The "How to Submit" walkthrough opens after generating bridging files (skippable) and
+covers the whole My Tax Digital flow, including the two traps that catch people: the
+upload's "to" date defaulting to today instead of the quarter end, and the fact that
+a submitted obligation cannot be amended.
+
 ## What it does
 
 - **Imports bank statements** in CSV, OFX, XLSX, XLS (including the HTML-tables-saved-as-
@@ -81,6 +125,21 @@ them) → Auto-classify → review the highlighted uncategorised lines → check
 tab → Generate Bridging Files → follow the How to Submit guide → cross-check every
 figure on the My Tax Digital review screen against the Summary tab → Submit.
 
+## Help improve PDF statement recognition
+
+PDF import is heuristic — it reads date-prefixed lines from text-based PDFs and infers
+each amount's sign from the balance movement — and how well it works varies by bank.
+**Real PDF statements are what improve it.** If PDF recognition is spotty for your
+bank, consider submitting a sample statement (open an issue to arrange it).
+
+**Please only submit statements whose contents are not sensitive.** Good candidates:
+accounts that have already been shut down (or will be shortly), or accounts where you
+hold nothing of value but there has been some past activity that you have determined
+is not confidential. When in doubt, don't send it — and never submit a statement
+containing information you consider private. Anything used to build a committed test
+fixture gets its names, references, dates, amounts and balances altered first, but
+that is a courtesy, not a substitute for your own judgement about what you share.
+
 ## License
 
 [GPL-3.0](LICENSE). Contributions welcome.
@@ -90,9 +149,3 @@ figure on the My Tax Digital review screen against the Summary tab → Submit.
 If this saved you some time or money, donations are very welcome:
 
 **BTC:** `bc1qwafw8nxmjkr6p3tajmrqfdn2wnj93g9ysnydpk`
-
-**Lightning:**
-
-```
-lnbc1p49umz2pp5gpj4wkyxyqsltw2kjfrl7yu28u7w4hgwk4pzaqht6w96j3wardvssp5vn5625xl0r3q9t4a9rvhrw7x38pqcgrjmzpkysjhfzzyud762k8sdqqcqzynxqyz5vq9qlzqqqqqqqqqqqqqqqqqqqqqqqqqqysgqrzjq0kw7e6mu3ytv90xzajzgpcxw0hc9p8ql5va30sx9fkttvfs5zsdzq8qxvm7fwf6fgqqqqlgqqqqqeqqjqgz23u4pppyrvu76f0mwm83ujsss8gsgaa0a3w5cw06rcczd5rw686sddqqny9dnffdjdm3657z5kedhz8q3nav6tykcl3ktjjqfz6rspqdca3h
-```
