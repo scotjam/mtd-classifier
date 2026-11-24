@@ -313,6 +313,13 @@ def _parse_words_by_columns(
     ]
 
     txns = []
+    # Description-only rows (no figures) waiting for the row that carries
+    # the amount. First Direct wraps every transaction this way - the
+    # dated first line holds the type and payee ("02 Mar 26 SO ACME CHARITY
+    # TRUST"), the undated second the reference and amount ("DONATION
+    # 50.00") - and dropping the first line loses the payee.
+    pending_desc: list[str] = []
+    pending_raw: list[str] = []
     for line_words in ordered_lines:
         if line_words[0]["top"] <= header["top"]:
             continue
@@ -320,6 +327,11 @@ def _parse_words_by_columns(
         rest = line_words[consumed:]
         if txn_date is not None and not rest:
             continue  # a date-only sub-line (e.g. Barclays' purchase date)
+        if consumed:
+            # A dated row starts a new transaction: text left pending from
+            # earlier rows (e.g. Revolut's "To: 22782735" metadata sub-row
+            # after a transaction) doesn't belong to it.
+            pending_desc, pending_raw = [], []
         if txn_date is None:
             # Consecutive transactions can share one printed date
             # (Barclays groups several rows under a posting date).
@@ -353,6 +365,16 @@ def _parse_words_by_columns(
         description = " ".join(desc_parts).strip()
         if consumed and (description or amounts_seen):
             last_date = txn_date
+        row_raw = " ".join(w["text"] for w in line_words)
+        if not amounts_seen and balance is None:
+            # No figures at all: the first line(s) of a wrapped transaction
+            if description and not (OPENING_TOTAL_RE.match(description)
+                                    or CLOSING_TOTAL_RE.match(description)):
+                pending_desc.append(description)
+                pending_raw.append(row_raw)
+            continue
+        lead_desc, lead_raw = pending_desc, pending_raw
+        pending_desc, pending_raw = [], []
         # A row with figures in BOTH money columns is a summary (Halifax's
         # STATEMENT CLOSING BALANCE prints the period's total out AND in),
         # and running-total rows are not transactions.
@@ -363,10 +385,10 @@ def _parse_words_by_columns(
         sign, value = next(iter(amounts_seen.items()))
         txns.append(ParsedTransaction(
             date=txn_date,
-            description=description,
+            description=" ".join(lead_desc + [description]),
             amount=round(sign * value, 2),
             balance=balance,
-            raw_data=" ".join(w["text"] for w in line_words),
+            raw_data="\n".join(lead_raw + [row_raw]),
         ))
     return txns, last_date
 

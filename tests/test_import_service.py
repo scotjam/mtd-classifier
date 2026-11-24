@@ -385,3 +385,98 @@ def test_confirm_period_declined_keeps_estimate(repo, tmp_path):
         repo, f, account="Acc", on_confirm_period=lambda *a: None,
     )
     assert outcome.period == (date(2026, 4, 7), date(2026, 4, 7))
+
+
+# --- same-day, same-amount, different description (same format) ---
+
+def _csv(path, *rows):
+    path.write_text("Date,Description,Amount,Balance\n" + "".join(r + "\n" for r in rows))
+    return path
+
+
+def test_same_amount_different_description_asks_and_skips_when_same(repo, tmp_path):
+    """Re-importing the same format with descriptions read differently
+    (here: a statement whose payee line was lost) slipped past the hash
+    check and doubled up. The user is now asked, with both lines."""
+    old = _csv(tmp_path / "old.csv",
+               "02/03/2026,SO ACME CHARITY TRUST DONATION,-50.00,301.29",
+               "17/03/2026,DD EE LIMITED,-14.56,286.73")
+    import_statement(repo, old, account="Acc")
+    repo.commit()
+
+    new = _csv(tmp_path / "new.csv",
+               "02/03/2026,DONATION,-50.00,301.29",
+               "17/03/2026,DD EE LIMITED,-14.56,286.73")
+    asked = []
+
+    def same(incoming, existing, incoming_file):
+        asked.append((incoming.description, existing.description, incoming_file))
+        return True
+
+    outcome = import_statement(repo, new, account="Acc", on_same_amount=same)
+    repo.commit()
+    assert asked == [("DONATION", "SO ACME CHARITY TRUST DONATION", new)]
+    assert outcome.new_count == 0
+    assert outcome.duplicate_count == 2
+    assert outcome.same_amount_confirmed_count == 1
+
+
+def test_same_amount_different_description_imported_when_user_says_different(repo, tmp_path):
+    import_statement(repo, _csv(tmp_path / "old.csv",
+                                "02/03/2026,TESCO STORES,-50.00,301.29"), account="Acc")
+    repo.commit()
+    outcome = import_statement(
+        repo, _csv(tmp_path / "new.csv", "02/03/2026,ASDA STORES,-50.00,251.29"),
+        account="Acc", on_same_amount=lambda *a: False,
+    )
+    repo.commit()
+    assert outcome.new_count == 1
+    assert outcome.same_amount_confirmed_count == 0
+
+
+def test_same_amount_without_callback_imports_as_before(repo, tmp_path):
+    import_statement(repo, _csv(tmp_path / "old.csv",
+                                "02/03/2026,TESCO STORES,-50.00,301.29"), account="Acc")
+    repo.commit()
+    outcome = import_statement(
+        repo, _csv(tmp_path / "new.csv", "02/03/2026,ASDA STORES,-50.00,251.29"),
+        account="Acc",
+    )
+    assert outcome.new_count == 1
+
+
+def test_same_amount_not_asked_for_rows_matched_by_hash_or_from_same_file(repo, tmp_path):
+    """An existing row matched exactly by a later line isn't offered for an
+    earlier one, and a file's own same-amount lines never ask about each
+    other."""
+    import_statement(repo, _csv(tmp_path / "old.csv",
+                                "02/03/2026,TESCO STORES,-50.00,301.29"), account="Acc")
+    repo.commit()
+    asked = []
+    outcome = import_statement(
+        repo, _csv(tmp_path / "new.csv",
+                   "02/03/2026,ASDA STORES,-50.00,251.29",
+                   "02/03/2026,TESCO STORES,-50.00,201.29",
+                   "05/03/2026,CAFE ONE,-3.00,198.29",
+                   "05/03/2026,CAFE TWO,-3.00,195.29"),
+        account="Acc", on_same_amount=lambda *a: asked.append(a) or True,
+    )
+    assert asked == []
+    assert outcome.new_count == 3
+    assert outcome.duplicate_count == 1
+
+
+def test_source_path_recorded_and_found_by_name_for_older_imports(repo, tmp_path):
+    from mtd_classifier.services.import_service import statement_source_path
+
+    f = _csv(tmp_path / "a.csv", "02/03/2026,TESCO STORES,-50.00,301.29")
+    outcome = import_statement(repo, f, account="Acc")
+    assert outcome.import_log.source_path == str(f.resolve())
+    assert statement_source_path(outcome.import_log) == f.resolve()
+
+    # an import from before locations were recorded: found beside the
+    # file being imported, if a file of that name is there
+    outcome.import_log.source_path = None
+    assert statement_source_path(outcome.import_log) is None
+    assert statement_source_path(outcome.import_log, near=tmp_path / "b.csv") == f
+    assert statement_source_path(outcome.import_log, near=tmp_path / "x" / "b.csv") is None

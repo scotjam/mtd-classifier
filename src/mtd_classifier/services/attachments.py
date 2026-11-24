@@ -95,7 +95,11 @@ def attachment_path(attachment: Attachment) -> Path:
 
 def open_attachment(attachment: Attachment) -> None:
     """Open an attachment with the OS default viewer for its file type."""
-    path = attachment_path(attachment)
+    open_file(attachment_path(attachment))
+
+
+def open_file(path: Path) -> None:
+    """Open a local file with the OS default viewer for its type."""
     if not path.exists():
         raise FileNotFoundError(path)
     if sys.platform == "win32":

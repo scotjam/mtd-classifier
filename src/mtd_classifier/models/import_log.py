@@ -30,6 +30,9 @@ class ImportLog(Base):
     # imports) - lets coverage be assessed per account even for files whose
     # every transaction deduped away.
     account: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Where the file was when (last) imported, so a prompt can open the
+    # source statement. None for imports made before this was recorded.
+    source_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     imported_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

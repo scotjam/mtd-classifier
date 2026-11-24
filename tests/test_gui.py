@@ -1942,3 +1942,94 @@ def test_import_files_offers_rescan_of_already_imported(seeded_repo, tmp_path, a
         assert calls == {"old.pdf": answer, "new.pdf": False}
     finally:
         app.destroy()
+
+
+def _write_csv(path, *rows):
+    path.write_text("Date,Description,Amount,Balance\n" + "".join(r + "\n" for r in rows))
+    return path
+
+
+def _walk_widgets(widget):
+    yield widget
+    for child in widget.winfo_children():
+        yield from _walk_widgets(child)
+
+
+def test_same_transaction_dialog_shows_both_with_open_links(repo, tmp_path):
+    """Side by side: the recorded line and the incoming one, each with a
+    link that opens its source statement; answering closes the dialog."""
+    from mtd_classifier.gui import app as app_module
+    from mtd_classifier.services.import_service import import_statement
+
+    folder = tmp_path / "statements"
+    folder.mkdir()
+    old = _write_csv(folder / "old.csv", "02/03/2026,SO ACME CHARITY TRUST DONATION,-50.00,301.29")
+    import_statement(repo, old, account="Acc")
+    repo.commit()
+    existing = repo.get_transactions_for_account(bank=None, account="Acc")[0]
+    new = _write_csv(folder / "new.csv", "02/03/2026,DONATION,-50.00,301.29")
+    from mtd_classifier.importers.base import ParsedTransaction
+    incoming = ParsedTransaction(date=date(2026, 3, 2), description="DONATION",
+                                 amount=-50.00, balance=301.29, raw_data="DONATION 50.00")
+
+    app = make_app(repo, tmp_path)
+    seen = {}
+
+    def drive():
+        dialog = next(w for w in app.winfo_children()
+                      if isinstance(w, tkinter.Toplevel) and w.title() == "Same transaction?")
+        widgets = list(_walk_widgets(dialog))
+        texts = [w.cget("text") for w in widgets if "text" in w.keys()]
+        seen["texts"] = texts
+        links = [w for w in widgets if isinstance(w, tkinter.Label)
+                 and str(w.cget("text")).startswith("Open statement")]
+        dialog.update()
+        for link in links:
+            link.event_generate("<Button-1>", x=1, y=1)
+        dialog.update()
+        next(w for w in widgets if isinstance(w, ttk.Checkbutton)).invoke()
+        next(w for w in widgets if isinstance(w, ttk.Button)
+             and w.cget("text").startswith("Same transaction")).invoke()
+
+    try:
+        app.after(100, drive)
+        opened = []
+        seen["opened"] = opened
+        with patch("mtd_classifier.services.attachments.open_file", opened.append):
+            result = app_module.prompt_same_transaction(app, incoming, existing, new)
+        assert result == (True, True)
+        assert "SO ACME CHARITY TRUST DONATION" in seen["texts"]
+        assert "DONATION" in seen["texts"]
+        assert "From: old.csv" in seen["texts"] and "From: new.csv" in seen["texts"]
+        assert seen["opened"] == [old.resolve(), new]
+    finally:
+        app.destroy()
+
+
+def test_import_asks_once_per_file_when_answer_applies_to_rest(repo, tmp_path):
+    from mtd_classifier.gui import app as app_module
+
+    old = _write_csv(tmp_path / "old.csv",
+                     "02/03/2026,SO ACME CHARITY TRUST DONATION,-50.00,301.29",
+                     "08/03/2026,ATM CASH Card MAR08 HIGH STREET,-110.00,191.29")
+    new = _write_csv(tmp_path / "new.csv",
+                     "02/03/2026,DONATION,-50.00,301.29",
+                     "08/03/2026,HIGH STREET,-110.00,191.29")
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app._add_account_tab("Acc", bank=None, account="Acc")
+        calls = []
+
+        def answer(parent, incoming, existing, incoming_file):
+            calls.append(incoming.description)
+            return True, True
+
+        with patch("mtd_classifier.gui.app.messagebox.showinfo") as info, \
+             patch.object(app_module, "prompt_same_transaction", answer):
+            tab._import_paths([old], folder_mode=False)
+            tab._import_paths([new], folder_mode=False)
+        assert calls == ["DONATION"]  # second line used the remembered answer
+        assert len(repo.get_transactions_for_account(bank=None, account="Acc")) == 2
+        assert "2 of those duplicates had a different description" in info.call_args[0][1]
+    finally:
+        app.destroy()

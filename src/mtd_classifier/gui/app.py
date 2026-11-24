@@ -61,6 +61,7 @@ from mtd_classifier.services.import_service import (
     file_hash,
     import_statement,
     normalize_description,
+    statement_source_path,
 )
 from mtd_classifier.services.verification import verification_report, verify_cross_format
 from mtd_classifier.importers.column_mapping import (
@@ -340,6 +341,120 @@ def prompt_day_conflict(
     dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
     dialog.wait_window()
     return result[0] if result else None
+
+
+def prompt_same_transaction(
+    parent: tk.Widget, incoming: ParsedTransaction, existing, incoming_file: Path,
+) -> tuple[bool, bool]:
+    """Ask whether an incoming line and an already-recorded line - same day,
+    same amount, different description - are the same real transaction.
+
+    Shows the two side by side, each with a link that opens its source
+    statement. Returns (same, apply_to_rest_of_file). Closing the dialog
+    counts as "different": the line is imported, as it would have been
+    before this check existed, and can be removed with Undo Import.
+    """
+    from mtd_classifier.services.attachments import open_file
+
+    dialog = tk.Toplevel(parent, bg=theme.PAPER)
+    dialog.title("Same transaction?")
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.resizable(True, False)
+    dialog.columnconfigure((0, 1), weight=1, uniform="side")
+
+    ttk.Label(
+        dialog, text=f"{incoming.date}    {incoming.amount:,.2f}",
+        font=theme.fnt_semibold(12),
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(16, 2))
+    ttk.Label(
+        dialog,
+        text="A transaction already recorded for this day has the same amount "
+        "but a different description. Are they the same real transaction?",
+        wraplength=620, foreground=theme.INK_MUTED, justify="left",
+    ).grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 12))
+
+    log = existing.import_log
+    sides = (
+        ("Already recorded", existing.description, existing.raw_data,
+         log.filename if log is not None else None,
+         statement_source_path(log, near=incoming_file)),
+        ("In the file being imported", incoming.description, incoming.raw_data,
+         incoming_file.name, incoming_file),
+    )
+
+    def opener(path: Path):
+        def handler(_event=None) -> None:
+            try:
+                open_file(path)
+            except OSError as e:
+                messagebox.showerror("Can't open file", f"{path}\n\n{e}", parent=dialog)
+        return handler
+
+    for col, (heading, desc, raw, filename, path) in enumerate(sides):
+        box = tk.Frame(
+            dialog, bg=theme.PAPER_RAISED, highlightthickness=1,
+            highlightbackground=theme.RULE, padx=12, pady=10,
+        )
+        box.grid(row=2, column=col, sticky="nsew",
+                 padx=(16, 6) if col == 0 else (6, 16))
+        bg = {"bg": theme.PAPER_RAISED}
+        tk.Label(box, text=heading.upper(), font=theme.fnt_semibold(8),
+                 fg=theme.INK_MUTED, **bg).pack(anchor="w")
+        tk.Label(box, text=desc, font=theme.fnt_semibold(11), fg=theme.INK,
+                 wraplength=280, justify="left", **bg).pack(anchor="w", pady=(4, 8))
+        tk.Label(box, text="Statement line:", font=theme.fnt(8),
+                 fg=theme.INK_MUTED, **bg).pack(anchor="w")
+        tk.Label(box, text=raw or "(not available)", font=("Consolas", 9),
+                 fg=theme.INK, wraplength=280, justify="left", **bg,
+                 ).pack(anchor="w", pady=(0, 8))
+        tk.Label(box, text=f"From: {filename or 'unknown file'}", font=theme.fnt(9),
+                 fg=theme.INK, wraplength=280, justify="left", **bg).pack(anchor="w")
+        if path is not None:
+            link = tk.Label(
+                box, text="Open statement ↗", cursor="hand2",
+                font=theme.fnt(9) + ("underline",), fg=theme.SKY_INK, **bg,
+            )
+            link.pack(anchor="w", pady=(2, 0))
+            link.bind("<Button-1>", opener(path))
+            tk.Label(box, text=str(path.parent), font=theme.fnt(8),
+                     fg=theme.INK_MUTED, wraplength=280, justify="left", **bg,
+                     ).pack(anchor="w")
+        else:
+            tk.Label(
+                box, text="File location not known - it was imported before "
+                "locations were recorded, or has since moved.",
+                font=theme.fnt(8), fg=theme.INK_MUTED, wraplength=280,
+                justify="left", **bg,
+            ).pack(anchor="w", pady=(2, 0))
+
+    apply_rest = tk.BooleanVar(value=False)
+    ttk.Checkbutton(
+        dialog, variable=apply_rest,
+        text=f"Use the same answer for the rest of {incoming_file.name}",
+    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 0))
+
+    result: list[bool] = []
+
+    def choose(same: bool) -> None:
+        result.append(same)
+        close_window(dialog)
+
+    buttons = ttk.Frame(dialog)
+    buttons.grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=16)
+    ttk.Button(
+        buttons, text="Same transaction - don't import it again",
+        command=lambda: choose(True),
+    ).pack(side="left", expand=True, fill="x", padx=(0, 4))
+    ttk.Button(
+        buttons, text="Different transactions - import it",
+        command=lambda: choose(False),
+    ).pack(side="left", expand=True, fill="x", padx=(4, 0))
+
+    fade_in(dialog)
+    dialog.protocol("WM_DELETE_WINDOW", lambda: choose(False))
+    dialog.wait_window()
+    return (result[0] if result else False), apply_rest.get()
 
 
 def select_user(preselect: str | None = None) -> str | None:
@@ -1068,7 +1183,7 @@ class AccountTab(ttk.Frame):
         repo = self.app.repo
         imported = dups = already = failed = mismatched = out_of_range = 0
         ambiguous_skipped = 0
-        day_conflicts = day_replaced = 0
+        day_conflicts = day_replaced = same_confirmed = 0
         skipped_empty: list[str] = []
         errors: list[str] = []
 
@@ -1112,6 +1227,20 @@ class AccountTab(ttk.Frame):
 
         def column_mapping_provider(file_path, rows):
             return prompt_column_mapping(self, file_path, rows)
+
+        # "Use the same answer for the rest of this file" - reset per file
+        same_answer_for_file: dict[str, bool] = {}
+
+        def on_same_amount(incoming, existing, incoming_file) -> bool:
+            name = current_file["name"]
+            if name in same_answer_for_file:
+                return same_answer_for_file[name]
+            same, apply_rest = prompt_same_transaction(
+                self, incoming, existing, incoming_file,
+            )
+            if apply_rest:
+                same_answer_for_file[name] = same
+            return same
 
         def on_confirm_period(file_path, period, transactions):
             # Only interrupt when the estimate looks like partial-quarter
@@ -1159,8 +1288,10 @@ class AccountTab(ttk.Frame):
                     on_day_conflict=on_day_conflict,
                     column_mapping_provider=column_mapping_provider,
                     on_confirm_period=on_confirm_period,
+                    on_same_amount=on_same_amount,
                 )
                 imported += outcome.new_count
+                same_confirmed += outcome.same_amount_confirmed_count
                 dups += outcome.duplicate_count
                 out_of_range += outcome.out_of_range_count
                 ambiguous_skipped += outcome.ambiguous_skipped_count
@@ -1210,6 +1341,11 @@ class AccountTab(ttk.Frame):
             summary += (
                 f"\n{ambiguous_skipped} line(s) skipped as ambiguous - "
                 "add them manually after checking the paper statement."
+            )
+        if same_confirmed:
+            summary += (
+                f"\n{same_confirmed} of those duplicates had a different "
+                "description - you confirmed they were the same transaction."
             )
         if day_replaced:
             summary += (

@@ -51,6 +51,16 @@ compared against whatever's already recorded for the account on that day.
   ``DayConflictResolution``) so a person decides what to keep. Without a
   callback, that day's incoming transactions are skipped and the caller can
   see how many days needed a decision via ``ImportOutcome.day_conflicts``.
+
+The day-level check only runs when the day's existing rows came from a
+different format. Re-importing the same format relies on the transaction
+hash - which misses the same real transaction if its description changed
+(a re-downloaded statement, or an importer fix that reads descriptions
+differently). So when an incoming line has no hash match but an existing
+line on the same day has the same amount and a different description, the
+optional ``on_same_amount(incoming, existing, incoming_file)`` callback asks
+whether they are the same transaction (True: skip as a duplicate) or not
+(False: import it). Without a callback it is imported, as before.
 """
 
 from __future__ import annotations
@@ -70,6 +80,7 @@ from mtd_classifier.storage.repository import Repository
 
 DuplicateDecision = Callable[[ParsedTransaction, Optional[RawTransaction]], bool]
 AmbiguousSignDecision = Callable[[ParsedTransaction], Literal["positive", "negative", "skip"]]
+SameAmountDecision = Callable[[ParsedTransaction, RawTransaction, Path], bool]
 
 
 @dataclass
@@ -133,6 +144,9 @@ class ImportOutcome:
     day_conflicts: int = 0  # days where existing/incoming amounts couldn't be reconciled
     day_replaced_count: int = 0  # existing transactions superseded by a fuller incoming day
     day_skipped_count: int = 0  # incoming transactions skipped - an existing day covered them
+    # lines the user confirmed match an existing same-day, same-amount line
+    # with a different description (included in duplicate_count)
+    same_amount_confirmed_count: int = 0
 
 
 def format_family(format_name: str) -> str:
@@ -339,6 +353,7 @@ def import_statement(
     on_day_conflict: DayConflictDecision | None = None,
     column_mapping_provider: "Callable | None" = None,
     on_confirm_period: "Callable | None" = None,
+    on_same_amount: SameAmountDecision | None = None,
 ) -> ImportOutcome:
     """Import one statement file with file-, transaction- and day-level dedup.
 
@@ -411,6 +426,7 @@ def import_statement(
                 import_log.period_end = period[1]
         if import_log.account is None:
             import_log.account = account
+        import_log.source_path = str(file.resolve())
     else:
         import_log = repo.create_import_log(
             filename=file.name,
@@ -421,6 +437,7 @@ def import_statement(
             period_start=period[0] if period else None,
             period_end=period[1] if period else None,
             account=account,
+            source_path=str(file.resolve()),
         )
 
     # Resolve sign ambiguity first - both the day-level check below and
@@ -450,6 +467,9 @@ def import_statement(
     day_conflicts = 0
     day_replaced = 0
     day_skipped = 0
+    # date -> existing rows on days left to per-transaction dedup because
+    # they came from this same format (see on_same_amount)
+    same_format_existing: dict = {}
     by_date: dict = {}
     for txn in resolved:
         by_date.setdefault(txn.date, []).append(txn)
@@ -465,6 +485,7 @@ def import_statement(
             # ordinary per-transaction hash/occurrence flow below (including
             # on_duplicate) already handles this well. Day-level
             # reconciliation exists for cross-format mismatches, not this.
+            same_format_existing[txn_date] = list(existing)
             continue
         existing_amounts = Counter(round(t.amount, 2) for t in existing)
         incoming_amounts = Counter(round(t.amount, 2) for t in day_txns)
@@ -524,16 +545,26 @@ def import_statement(
 
     new_count = 0
     dup_count = 0
+    same_amount_confirmed = 0
+    # Hash everything first: an existing row matched by hash anywhere in
+    # this file must not also be offered as a same-amount match for an
+    # earlier line.
+    hashed = []
+    claimed: set[int] = set()  # existing rows already matched this import
     occurrences: Counter[tuple[object, ...]] = Counter()
     for txn in resolved:
         if id(txn) in excluded_ids:
             continue
-
         key = (txn.date, normalize_description(txn.description), f"{txn.amount:.2f}")
         occurrence = occurrences[key]
         occurrences[key] += 1
         dhash = transaction_hash(identity, txn, occurrence)
         existing = repo.get_raw_transaction_by_hash(dhash)
+        if existing is not None:
+            claimed.add(existing.id)
+        hashed.append((txn, occurrence, dhash, existing))
+
+    for txn, occurrence, dhash, existing in hashed:
         if existing:
             # This file independently evidences the already-stored row -
             # record its source family for cross-format verification.
@@ -550,6 +581,18 @@ def import_statement(
             )
             if not on_duplicate(txn, previous):
                 dup_count += 1
+                continue
+
+        if on_same_amount is not None:
+            match = _same_amount_match(
+                txn, same_format_existing.get(txn.date, ()), claimed,
+                import_log.id, on_same_amount, file,
+            )
+            if match is not None:
+                claimed.add(match.id)
+                match.add_source_family(family)
+                dup_count += 1
+                same_amount_confirmed += 1
                 continue
 
         families = {family} | inherited_families.get(
@@ -591,4 +634,45 @@ def import_statement(
         day_conflicts=day_conflicts,
         day_replaced_count=day_replaced,
         day_skipped_count=day_skipped,
+        same_amount_confirmed_count=same_amount_confirmed,
     )
+
+
+def _same_amount_match(
+    txn: ParsedTransaction,
+    day_existing: Sequence[RawTransaction],
+    claimed: set[int],
+    import_log_id: int,
+    decide: SameAmountDecision,
+    file: Path,
+) -> RawTransaction | None:
+    """The existing row the user confirms is the same transaction as
+    ``txn`` (same day and amount, different description), or None."""
+    desc = normalize_description(txn.description)
+    for row in day_existing:
+        if (row.id in claimed
+                or row.import_log_id == import_log_id  # this file's own rows
+                or round(row.amount, 2) != round(txn.amount, 2)
+                or normalize_description(row.description) == desc):
+            continue
+        if decide(txn, row, file):
+            return row
+    return None
+
+
+def statement_source_path(log: ImportLog | None, near: Path | None = None) -> Path | None:
+    """Where an import's source file can be opened from, if it still exists:
+    its recorded location, else - for imports made before locations were
+    recorded, or a moved folder - a file of the same name beside ``near``
+    (statements usually sit together in one folder)."""
+    if log is None:
+        return None
+    if log.source_path:
+        recorded = Path(log.source_path)
+        if recorded.is_file():
+            return recorded
+    if near is not None:
+        sibling = near.parent / log.filename
+        if sibling.is_file():
+            return sibling
+    return None

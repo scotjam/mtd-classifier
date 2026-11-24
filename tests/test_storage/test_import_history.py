@@ -61,6 +61,35 @@ def test_import_logs_newest_first(repo):
     assert [l.id for l in logs] == [log2.id, log1.id]
 
 
+def test_import_that_added_nothing_still_listed(repo):
+    """A statement whose every line was already recorded (e.g. PDFs
+    checked against an earlier CSV) adds no transactions but must still
+    appear in the history - hiding it made 12 of 14 imported PDFs look
+    like they never went in."""
+    first = import_statement(repo, FIXTURES / "first_direct_sample.csv", account="Acc")
+    repo.commit()
+    empty = repo.create_import_log(
+        filename="statement.pdf", file_hash="h_empty", bank="pdf", fmt="pdf",
+        record_count=10, account="Acc",
+    )
+    repo.create_import_log(
+        filename="other.pdf", file_hash="h_other", bank="pdf", fmt="pdf",
+        record_count=3, account="Other",
+    )
+    repo.commit()
+    logs = repo.get_import_logs_for_account(bank=None, account="Acc")
+    assert [l.id for l in logs] == [empty.id, first.import_log.id]
+    assert repo.count_current_transactions_for_import(empty.id) == 0
+
+    # and it can be undone (just removes the log)
+    result = repo.undo_import(empty.id)
+    repo.commit()
+    assert result["transactions_removed"] == 0
+    assert [l.id for l in repo.get_import_logs_for_account(bank=None, account="Acc")] == [
+        first.import_log.id
+    ]
+
+
 class TestUndoImport:
     def test_undo_removes_only_this_imports_transactions(self, repo):
         outcome = import_statement(

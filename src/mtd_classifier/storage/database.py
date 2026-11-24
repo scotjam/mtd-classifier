@@ -50,6 +50,7 @@ def init_db(engine: Engine | None = None) -> None:
     _migrate_import_log_coverage(engine)
     _migrate_dedup_hashes(engine)
     _migrate_disallowable_flag(engine)
+    _migrate_import_log_source_path(engine)
 
 
 def _migrate_disallowable_flag(engine: Engine) -> None:
@@ -67,6 +68,18 @@ def _migrate_disallowable_flag(engine: Engine) -> None:
             "ALTER TABLE categorised_transactions "
             "ADD COLUMN disallowable BOOLEAN DEFAULT 0"
         ))
+
+
+def _migrate_import_log_source_path(engine: Engine) -> None:
+    """Add import_logs.source_path to pre-existing databases. Older logs
+    stay NULL - where their file was is unknown."""
+    with engine.begin() as conn:
+        columns = [
+            row[1] for row in conn.execute(text("PRAGMA table_info(import_logs)"))
+        ]
+        if "source_path" in columns:
+            return
+        conn.execute(text("ALTER TABLE import_logs ADD COLUMN source_path VARCHAR(1000)"))
 
 
 def _migrate_source_formats(engine: Engine) -> None:

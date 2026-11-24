@@ -204,6 +204,24 @@ def import_file(
     def _on_day_conflict(txn_date, identity, existing, incoming):
         return _prompt_day_conflict(txn_date, identity, existing, incoming)
 
+    def _on_same_amount(incoming, existing, incoming_file) -> bool:
+        from mtd_classifier.services.import_service import statement_source_path
+
+        log = existing.import_log
+        existing_src = statement_source_path(log, near=incoming_file)
+        console.print(
+            f"\n[yellow]Same day and amount, different description:[/yellow] "
+            f"{incoming.date}  {incoming.amount:,.2f}\n"
+            f"  Already recorded: {existing.description}\n"
+            f"    from {existing_src or (log.filename if log else 'unknown file')}\n"
+            f"  Being imported:   {incoming.description}\n"
+            f"    from {incoming_file.resolve()}"
+        )
+        same = typer.confirm("Are these the same transaction (skip it)?", default=False)
+        console.print("       -> Skipped as duplicate.\n" if same
+                      else "       -> Imported as separate transaction.\n")
+        return same
+
     try:
         outcome = import_statement(
             repo,
@@ -217,6 +235,7 @@ def import_file(
             on_day_conflict=_on_day_conflict,
             column_mapping_provider=_prompt_column_mapping_cli,
             on_confirm_period=_prompt_confirm_period_cli,
+            on_same_amount=None if duplicates == "import" else _on_same_amount,
         )
     except AlreadyImportedError as e:
         console.print(

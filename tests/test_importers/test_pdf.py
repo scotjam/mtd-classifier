@@ -509,3 +509,47 @@ def test_undated_row_at_top_of_next_page_keeps_previous_date(tmp_path):
         (date(2026, 8, 24), -20.00),
     ]
     assert txns[1].balance == 3033.99
+
+
+def test_first_direct_two_line_descriptions_keep_payee_line(tmp_path):
+    """First Direct wraps every transaction over two rows: the type and
+    payee on the first ("02 Mar 26 SO ACME CHARITY TRUST"), the reference
+    and amount on the second ("DONATION 50.00"). Dropping the figure-less
+    first row lost the payee - and, because the description changed, let a
+    re-imported statement slip past duplicate detection."""
+    y = 700
+    rows = [
+        (30, y, "Date"), (90, y, "Payment"), (140, y, "details"),
+        (360, y, "Paidout"), (440, y, "Paidin"), (520, y, "Balance"),
+        (30, y - 14, "01"), (50, y - 14, "Mar"), (80, y - 14, "26"),
+        (125, y - 14, "Balancebroughtforward"), (520, y - 14, "353.09"),
+        # dated first row: type + payee, no figures
+        (30, y - 28, "02"), (50, y - 28, "Mar"), (80, y - 28, "26"),
+        (105, y - 28, "SO"), (125, y - 28, "ACME"), (165, y - 28, "CHARITY"),
+        (220, y - 28, "TRUST"),
+        (125, y - 42, "DONATION"), (370, y - 42, "50.00"),
+        # same-day second transaction: undated first row
+        (105, y - 56, "SO"), (125, y - 56, "J"), (140, y - 56, "SMITH"),
+        (125, y - 70, "RENT"), (160, y - 70, "SHARE"), (370, y - 70, "1.80"),
+        (520, y - 70, "301.29"),
+        # single-row transaction
+        (30, y - 84, "17"), (50, y - 84, "Mar"), (80, y - 84, "26"),
+        (105, y - 84, "DD"), (125, y - 84, "EE"), (145, y - 84, "LIMITED"),
+        (370, y - 84, "14.56"), (520, y - 84, "286.73"),
+        (30, y - 98, "18"), (50, y - 98, "Mar"), (80, y - 98, "26"),
+        (105, y - 98, "CR"), (125, y - 98, "A"), (140, y - 98, "OTHER"),
+        (125, y - 112, "transfer"), (440, y - 112, "1,000.00"),
+        (520, y - 112, "1,286.73"),
+        (30, y - 126, "01"), (50, y - 126, "Apr"), (80, y - 126, "26"),
+        (125, y - 126, "Balancecarriedforward"), (520, y - 126, "1,286.73"),
+    ]
+    pdf = _make_pdf_positioned(tmp_path / "fd.pdf", rows)
+    txns = list(PdfImporter().parse(pdf))
+    assert [(t.date, t.description, t.amount) for t in txns] == [
+        (date(2026, 3, 2), "SO ACME CHARITY TRUST DONATION", -50.00),
+        (date(2026, 3, 2), "SO J SMITH RENT SHARE", -1.80),
+        (date(2026, 3, 17), "DD EE LIMITED", -14.56),
+        (date(2026, 3, 18), "CR A OTHER transfer", 1000.00),
+    ]
+    # raw_data keeps both printed rows, as shown in duplicate prompts
+    assert txns[0].raw_data == "02 Mar 26 SO ACME CHARITY TRUST\nDONATION 50.00"

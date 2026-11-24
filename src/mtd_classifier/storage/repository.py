@@ -64,6 +64,7 @@ class Repository:
         period_start: date | None = None,
         period_end: date | None = None,
         account: str | None = None,
+        source_path: str | None = None,
     ) -> ImportLog:
         log = ImportLog(
             filename=filename,
@@ -75,6 +76,7 @@ class Repository:
             period_start=period_start,
             period_end=period_end,
             account=account,
+            source_path=source_path,
         )
         self.session.add(log)
         self.session.flush()
@@ -100,24 +102,26 @@ class Repository:
     ) -> Sequence[ImportLog]:
         """Import history relevant to one account, newest first.
 
-        An ImportLog itself has no account field (a file is imported once,
-        regardless of which tab triggered it), so this finds logs via the
-        transactions they actually created.
+        Includes imports that added no transactions (every line was already
+        recorded) - they still verified the period, and hiding them made a
+        multi-file import look like most files never went in. Such logs are
+        found by their recorded ``account``; older logs predating that
+        column are found via the transactions they created.
         """
-        stmt = select(ImportLog).join(
-            RawTransaction, RawTransaction.import_log_id == ImportLog.id
-        )
+        via_txns = select(RawTransaction.import_log_id)
         if account is not None:
-            stmt = stmt.where(RawTransaction.account == account)
+            via_txns = via_txns.where(RawTransaction.account == account)
+            own = ImportLog.account == account
         elif bank is not None:
-            stmt = stmt.where(RawTransaction.bank == bank).where(
+            via_txns = via_txns.where(RawTransaction.bank == bank).where(
                 RawTransaction.account.is_(None)
             )
+            own = (ImportLog.account.is_(None)) & (ImportLog.bank == bank)
         else:
             return []
         # id desc as tie-break: imports in the same second share an
         # imported_at, but id strictly increases in import order.
-        stmt = stmt.distinct().order_by(
+        stmt = select(ImportLog).where(own | ImportLog.id.in_(via_txns)).order_by(
             ImportLog.imported_at.desc(), ImportLog.id.desc()
         )
         return self.session.execute(stmt).scalars().all()
