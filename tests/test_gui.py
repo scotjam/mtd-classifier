@@ -126,6 +126,116 @@ def test_apply_category_sets_categorisation_and_learns_rule(seeded_repo, tmp_pat
         app.destroy()
 
 
+def test_classifying_highlighted_line_selects_next_highlighted(seeded_repo, tmp_path):
+    repo, ids = seeded_repo
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app.account_tabs["First Direct Current"]
+        assert list(tab.tree.get_children()) == [str(i) for i in ids[:3]]
+        tab.tree.selection_set(str(ids[0]))
+        tab.category_var.set("Self-Employed Income")
+        tab.apply_category()
+        assert tab.tree.selection() == (str(ids[1]),)
+        with patch.object(app, "set_status") as status:
+            tab._apply_category([ids[1]], "Personal")
+        assert tab.tree.selection() == (str(ids[2]),)
+        msg = status.call_args.args[0]
+        assert "moved to next uncategorised line: 2026-05-09 PLUMBER REFUND" in msg
+        assert "(1 left)" in msg
+        with patch.object(app, "set_status") as status:
+            tab._apply_category([ids[2]], "Self-Employed Income")
+        assert "no uncategorised lines left" in status.call_args.args[0]
+    finally:
+        app.destroy()
+
+
+def test_next_highlighted_wraps_to_top_and_skips_classified(seeded_repo, tmp_path):
+    repo, ids = seeded_repo
+    repo.set_categorisation(
+        raw_transaction_id=ids[0], category="self_employed_income",
+        confidence="manual", changed_by="test",
+    )
+    repo.commit()
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app.account_tabs["First Direct Current"]
+        # Classify the last line: wraps past the classified first line to ids[1]
+        tab._apply_category([ids[2]], "Self-Employed Income")
+        assert tab.tree.selection() == (str(ids[1]),)
+    finally:
+        app.destroy()
+
+
+def test_reclassifying_categorised_line_does_not_jump(seeded_repo, tmp_path):
+    repo, ids = seeded_repo
+    repo.set_categorisation(
+        raw_transaction_id=ids[0], category="self_employed_income",
+        confidence="manual", changed_by="test",
+    )
+    repo.commit()
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app.account_tabs["First Direct Current"]
+        tab._apply_category([ids[0]], "Self-Employed Income")
+        assert tab.tree.selection() == ()
+    finally:
+        app.destroy()
+
+
+def test_animated_see_scrolls_row_into_view():
+    import time
+    from mtd_classifier.gui.table import LedgerTable
+
+    try:
+        root = tkinter.Tk()
+    except tkinter.TclError as e:
+        pytest.skip(f"Tk unavailable: {e}")
+    try:
+        root.geometry("400x200")
+        table = LedgerTable(root, columns=("a",))
+        table.pack(fill="both", expand=True)
+        for i in range(100):
+            table.insert("", "end", iid=str(i), values=(f"row {i}",))
+        root.update()
+        assert table.body.yview()[0] == 0.0
+        table.see("80", animate=True)
+        deadline = time.time() + 2
+        while table._scroll_job is not None and time.time() < deadline:
+            root.update()
+        assert table._scroll_job is None
+        top, bottom = table.body.yview()
+        assert top <= 80 / 100 and 81 / 100 <= bottom + 1e-9
+    finally:
+        root.destroy()
+
+
+def test_right_click_selects_row_and_draws_it_before_menu(seeded_repo, tmp_path):
+    repo, ids = seeded_repo
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app.account_tabs["First Direct Current"]
+        app.update()
+        seen = {}
+
+        def fake_popup(menu, x, y):
+            seen["selection"] = tab.tree.selection()
+            seen["redraw_pending"] = tab.tree._redraw_scheduled
+
+        event = type("E", (), {"y": tab.tree._rowheight + 2, "x_root": 0, "y_root": 0})()
+        with patch.object(tkinter.Menu, "tk_popup", fake_popup):
+            tab._show_context_menu(event)
+        assert seen["selection"] == (str(ids[1]),)
+        assert seen["redraw_pending"] is False
+
+        # Right-click inside a multi-selection keeps the whole selection
+        tab.tree.selection_set(str(ids[0]), str(ids[1]))
+        with patch.object(tkinter.Menu, "tk_popup", fake_popup):
+            tab._show_context_menu(event)
+        assert seen["selection"] == (str(ids[0]), str(ids[1]))
+    finally:
+        app.destroy()
+
+
 def test_refund_panel_and_mark_refund(seeded_repo, tmp_path):
     repo, ids = seeded_repo
     # Categorise the original expense first
@@ -1794,5 +1904,41 @@ def test_no_user_ui_without_user(seeded_repo, tmp_path):
                 yield from walk(child)
         assert not [w for w in walk(app) if isinstance(w, ttk.Button)
                     and "Switch User" in str(w.cget("text"))]
+    finally:
+        app.destroy()
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_import_files_offers_rescan_of_already_imported(seeded_repo, tmp_path, answer):
+    """Picking a previously imported file asks to re-scan it (force=True)
+    instead of silently skipping it."""
+    from mtd_classifier.gui import app as app_module
+    from mtd_classifier.services.import_service import file_hash
+
+    repo, _ = seeded_repo
+    old = tmp_path / "old.pdf"
+    old.write_bytes(b"old statement")
+    new = tmp_path / "new.pdf"
+    new.write_bytes(b"new statement")
+    repo.create_import_log(
+        filename=old.name, file_hash=file_hash(old), bank="pdf", fmt="pdf",
+        record_count=1,
+    )
+    repo.commit()
+    app = make_app(repo, tmp_path)
+    try:
+        tab = app.account_tabs["First Direct Current"]
+        calls = {}
+
+        def fake_import(repo, path, **kw):
+            calls[path.name] = kw["force"]
+            raise RuntimeError("stop")  # reported as a per-file problem
+
+        with patch.object(app_module, "import_statement", fake_import), \
+             patch.object(app_module.messagebox, "askyesno", return_value=answer) as ask, \
+             patch.object(app_module.messagebox, "showwarning"):
+            tab._import_paths([old, new], folder_mode=False)
+        assert "1 of the selected file(s)" in ask.call_args.args[1]
+        assert calls == {"old.pdf": answer, "new.pdf": False}
     finally:
         app.destroy()

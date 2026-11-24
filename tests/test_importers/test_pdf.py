@@ -140,23 +140,34 @@ def test_non_statement_pdf_rejected(tmp_path):
 def _make_pdf_positioned(path, words):
     """Minimal PDF placing each (x, y, text) word individually - for
     testing column-position-aware parsing (IN/OUT/BALANCE layouts)."""
+    return _make_pdf_positioned_pages(path, [words])
+
+
+def _make_pdf_positioned_pages(path, pages):
+    """Like _make_pdf_positioned, with one list of (x, y, text) words per page."""
     def esc(s):
         return s.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
 
-    content = " ".join(
-        f"BT /F1 10 Tf 1 0 0 1 {x} {y} Tm ({esc(text)}) Tj ET"
-        for x, y, text in words
-    )
-    content_bytes = content.encode("latin-1")
+    # Objects: 1 catalog, 2 page tree, 3 font, then a page + content per page.
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(len(pages)))
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-        b"<< /Length " + str(len(content_bytes)).encode()
-        + b" >>\nstream\n" + content_bytes + b"\nendstream",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode(),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
+    for i, words in enumerate(pages):
+        content_bytes = " ".join(
+            f"BT /F1 10 Tf 1 0 0 1 {x} {y} Tm ({esc(text)}) Tj ET"
+            for x, y, text in words
+        ).encode("latin-1")
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Contents {5 + 2 * i} 0 R /Resources << /Font << /F1 3 0 R >> >> >>".encode()
+        )
+        objects.append(
+            b"<< /Length " + str(len(content_bytes)).encode()
+            + b" >>\nstream\n" + content_bytes + b"\nendstream"
+        )
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for i, obj in enumerate(objects, start=1):
@@ -461,3 +472,40 @@ def test_nationwide_style_yearless_dates_no_period(tmp_path):
     assert txns[1].amount == -72.70
     assert txns[2].amount == 3100.80          # £ In column
     assert not any("statement" in t.description.lower() for t in txns)
+
+
+def test_undated_row_at_top_of_next_page_keeps_previous_date(tmp_path):
+    """First Direct prints a day's date only on its first row. When that day
+    continues onto the next page, the page's first transaction has no date -
+    it must inherit the previous page's date, not be silently dropped (this
+    lost a credit from a real statement)."""
+    def header(y):
+        return [
+            (30, y, "Date"), (90, y, "Payment"), (140, y, "details"),
+            (360, y, "Paidout"), (440, y, "Paidin"), (520, y, "Balance"),
+        ]
+
+    page1 = header(700) + [
+        (30, 686, "01"), (50, 686, "Aug"), (80, 686, "26"),
+        (105, 686, "Balance"), (150, 686, "brought"), (190, 686, "forward"),
+        (520, 686, "120.00"),
+        (30, 672, "21"), (50, 672, "Aug"), (80, 672, "26"),
+        (105, 672, "CR"), (125, 672, "Client"), (440, 672, "1,480.52"),
+        (90, 658, "Balancecarriedforward"), (520, 658, "1,600.52"),
+    ]
+    page2 = header(700) + [
+        (90, 686, "Balancebroughtforward"), (520, 686, "1,600.52"),
+        (105, 672, "CR"), (125, 672, "Client"), (440, 672, "1,433.47"),
+        (520, 672, "3,033.99"),
+        (30, 658, "24"), (50, 658, "Aug"), (80, 658, "26"),
+        (105, 658, "SO"), (125, 658, "Donation"), (370, 658, "20.00"),
+        (520, 658, "3,013.99"),
+    ]
+    pdf = _make_pdf_positioned_pages(tmp_path / "fd.pdf", [page1, page2])
+    txns = list(PdfImporter().parse(pdf))
+    assert [(t.date, t.amount) for t in txns] == [
+        (date(2026, 8, 21), 1480.52),
+        (date(2026, 8, 21), 1433.47),
+        (date(2026, 8, 24), -20.00),
+    ]
+    assert txns[1].balance == 3033.99

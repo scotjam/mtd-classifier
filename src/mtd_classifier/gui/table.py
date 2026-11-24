@@ -23,6 +23,8 @@ from mtd_classifier.gui import theme
 HEADER_H = 26
 ROW_H = 26
 _GRAB = 5  # px either side of a column boundary that starts a resize drag
+SCROLL_STEPS = 14  # frames in an animated see()
+SCROLL_FRAME_MS = 16
 
 
 class LedgerTable(ttk.Frame):
@@ -49,6 +51,7 @@ class LedgerTable(ttk.Frame):
         self._heading_font = tkfont.Font(root=self, font=theme.fnt_semibold(9))
         self._hairline = theme._blend(theme.RULE, theme.PAPER, 0.35)
         self._redraw_scheduled = False
+        self._scroll_job: str | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -212,7 +215,10 @@ class LedgerTable(ttk.Frame):
         self._fire_select()
         self._schedule_redraw()
 
-    def see(self, iid) -> None:
+    def see(self, iid, animate: bool = False) -> None:
+        """Scroll so the row is visible. With animate=True the list glides
+        there (ease-out over ~0.2s) so the user can follow where it went."""
+        self._cancel_scroll()
         iid = str(iid)
         index = next((n for n, it in enumerate(self._items) if it["iid"] == iid), None)
         if index is None:
@@ -222,10 +228,43 @@ class LedgerTable(ttk.Frame):
         view_h = max(self._rowheight, self.body.winfo_height())
         y0, y1 = index * self._rowheight, (index + 1) * self._rowheight
         if y0 < top:
-            self.body.yview_moveto(y0 / total_h)
+            target = y0 / total_h
         elif y1 > top + view_h:
-            self.body.yview_moveto(max(0.0, (y1 - view_h) / total_h))
-        self._schedule_redraw()
+            # Scrolling snaps to whole rows (yscrollincrement), rounding
+            # down - round the new top row up so the target isn't clipped.
+            rows_hidden = -(-(y1 - view_h) // self._rowheight)
+            target = max(0.0, rows_hidden * self._rowheight / total_h)
+        else:
+            self._schedule_redraw()
+            return
+        if animate:
+            self._animate_scroll(top / total_h, target, 1)
+        else:
+            self.body.yview_moveto(target)
+            self._schedule_redraw()
+
+    def _animate_scroll(self, start: float, target: float, step: int) -> None:
+        t = step / SCROLL_STEPS
+        eased = 1 - (1 - t) ** 3
+        try:
+            self.body.yview_moveto(start + (target - start) * eased)
+            self._redraw()  # draw this frame now, not at idle
+            if step < SCROLL_STEPS:
+                self._scroll_job = self.after(
+                    SCROLL_FRAME_MS, self._animate_scroll, start, target, step + 1
+                )
+            else:
+                self._scroll_job = None
+        except tk.TclError:
+            self._scroll_job = None  # widget destroyed mid-animation
+
+    def _cancel_scroll(self) -> None:
+        if self._scroll_job is not None:
+            try:
+                self.after_cancel(self._scroll_job)
+            except tk.TclError:
+                pass
+            self._scroll_job = None
 
     def identify_row(self, y) -> str:
         row = int(self.body.canvasy(y)) // self._rowheight
@@ -294,6 +333,7 @@ class LedgerTable(ttk.Frame):
         return "break"
 
     def _on_wheel(self, event) -> str:
+        self._cancel_scroll()
         self.body.yview_scroll(-int(event.delta / 120), "units")
         self._schedule_redraw()
         return "break"

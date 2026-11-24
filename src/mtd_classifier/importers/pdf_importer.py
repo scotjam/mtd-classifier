@@ -141,15 +141,17 @@ class PdfImporter:
 
         column_txns: list[ParsedTransaction] = []
         any_columns = False
+        last_date: date | None = None
         for _, words in pages:
             # Statements with separate money-in / money-out columns
             # (Starling, Barclays) lose the distinction when flattened to
             # text - but word x-positions preserve it exactly, so
             # column-aware parsing takes precedence when a page has a
             # money-columns header.
-            page_txns = _parse_words_by_columns(words, period)
-            if page_txns is not None:
+            parsed = _parse_words_by_columns(words, period, last_date)
+            if parsed is not None:
                 any_columns = True
+                page_txns, last_date = parsed
                 column_txns.extend(page_txns)
         if any_columns:
             yield from column_txns
@@ -252,9 +254,16 @@ def _parse_row_date(line_words: list, period) -> "tuple[date | None, int]":
     return None, 0
 
 
-def _parse_words_by_columns(words, period) -> "list[ParsedTransaction] | None":
+def _parse_words_by_columns(
+    words, period, last_date: "date | None" = None,
+) -> "tuple[list[ParsedTransaction], date | None] | None":
     """Parse one page's words using money-column x-positions, or None if
     the page has no recognisable money-columns header.
+
+    ``last_date`` is the date in force at the end of the previous page and
+    the return value carries it on: banks that print a day's date only once
+    (First Direct) can continue that day at the top of the next page with
+    an undated row, which would otherwise be silently dropped.
 
     Handles both header shapes seen in the wild: Starling's "IN OUT
     ACCOUNT BALANCE" and Barclays' "Money out Money in Balance" (either
@@ -304,7 +313,6 @@ def _parse_words_by_columns(words, period) -> "list[ParsedTransaction] | None":
     ]
 
     txns = []
-    last_date: date | None = None
     for line_words in ordered_lines:
         if line_words[0]["top"] <= header["top"]:
             continue
@@ -360,7 +368,7 @@ def _parse_words_by_columns(words, period) -> "list[ParsedTransaction] | None":
             balance=balance,
             raw_data=" ".join(w["text"] for w in line_words),
         ))
-    return txns
+    return txns, last_date
 
 
 def _parse_lines(lines: list[str]) -> Iterator[ParsedTransaction]:

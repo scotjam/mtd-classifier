@@ -58,6 +58,7 @@ from mtd_classifier.services.import_service import (
     BankMismatchError,
     DayConflictResolution,
     UnknownFormatError,
+    file_hash,
     import_statement,
     normalize_description,
 )
@@ -1125,13 +1126,31 @@ class AccountTab(ttk.Frame):
                     return None
             return prompt_confirm_period(self, file_path, period, self.label)
 
+        # Picking files that were imported before: offer to re-scan them
+        # rather than silently skipping. Re-scanning never duplicates
+        # (transaction-level dedup), but it does pick up lines an earlier
+        # import missed and records that this file backs existing lines.
+        rescan: set[Path] = set()
+        if not folder_mode:
+            seen = [p for p in paths if repo.get_import_log_by_hash(file_hash(p))]
+            if seen and messagebox.askyesno(
+                "Already imported",
+                f"{len(seen)} of the selected file(s) were imported before.\n\n"
+                "Re-scan them? Nothing will be duplicated - this only picks "
+                "up lines an earlier import missed and marks which "
+                "transactions this statement backs.\n\n"
+                "(No = skip them)",
+                parent=self,
+            ):
+                rescan = set(seen)
+
         for path in paths:
             current_file["name"] = path.name
             try:
                 outcome = import_statement(
                     repo, path,
                     account=self.account,
-                    force=folder_mode,
+                    force=folder_mode or path in rescan,
                     on_duplicate=on_duplicate,
                     date_range=date_range,
                     expected_bank=self.bank,
@@ -1235,6 +1254,15 @@ class AccountTab(ttk.Frame):
         repo = self.app.repo
         category = LABEL_TO_CATEGORY[label]
         by_id = {t.id: t for t in self._transactions()}
+        # Classifying a highlighted (uncategorised) line moves on to the next
+        # highlighted line, so a run of them can be worked through quickly.
+        iids = [str(i) for i in ids]
+        shown = set(self.tree.get_children())
+        was_uncategorised = any(
+            i in shown and "uncategorised" in self.tree.item(i, "tags")
+            for i in iids
+        )
+        rows_after = self._rows_after(iids)
         for txn_id in ids:
             repo.set_categorisation(
                 raw_transaction_id=txn_id,
@@ -1245,7 +1273,25 @@ class AccountTab(ttk.Frame):
             repo.upsert_exact_rule(by_id[txn_id].description, category)
         repo.commit()
         self.refresh()
+        moved_to = None
+        if was_uncategorised:
+            moved_to = self._select_next_uncategorised(rows_after)
         message = f"Set {len(ids)} line(s) to {label} (rule saved for next time)"
+        if was_uncategorised:
+            # Say where the selection went: the list may have scrolled (or
+            # wrapped to the top), taking the line just categorised out of view.
+            remaining = sum(
+                "uncategorised" in self.tree.item(i, "tags")
+                for i in self.tree.get_children()
+            )
+            if moved_to is None:
+                message += " - no uncategorised lines left"
+            else:
+                d, desc, amount = self.tree.item(moved_to, "values")[:3]
+                message += (
+                    f" - moved to next uncategorised line: {d} {desc[:40]} "
+                    f"{amount} ({remaining} left)"
+                )
         if TransactionCategory(category) in CATEGORIES_REQUIRING_CONFIRMATION:
             # Gentle nudge only: employment income never enters quarterly
             # updates, so nothing is blocked - it just needs its gross figure
@@ -1255,6 +1301,28 @@ class AccountTab(ttk.Frame):
                 "on the Summary tab before the year-end final declaration"
             )
         self.app.set_status(message)
+
+    def _rows_after(self, iids: list[str]) -> list[str]:
+        """Row ids in display order after the last of `iids`, then wrapping
+        round to the top. Taken before a refresh so the order is the one the
+        user was looking at (a category sort would otherwise reshuffle it)."""
+        children = list(self.tree.get_children())
+        positions = [children.index(i) for i in iids if i in children]
+        if not positions:
+            return children
+        last = max(positions)
+        return children[last + 1:] + children[:last + 1]
+
+    def _select_next_uncategorised(self, candidates: list[str]) -> str | None:
+        """Select and scroll to the first still-highlighted row; return its
+        id, or None if no highlighted rows are left."""
+        shown = set(self.tree.get_children())
+        for iid in candidates:
+            if iid in shown and "uncategorised" in self.tree.item(iid, "tags"):
+                self.tree.selection_set(iid)
+                self.tree.see(iid, animate=True)
+                return iid
+        return None
 
     def auto_classify(self) -> None:
         repo = self.app.repo
@@ -1337,6 +1405,10 @@ class AccountTab(ttk.Frame):
             return
         if row not in self.tree.selection():
             self.tree.selection_set(row)
+            # The table redraws when Tk is idle, but the popup menu blocks
+            # until it closes - draw the new selection now so the user can
+            # see which line the menu applies to.
+            self.tree.update_idletasks()
         ids = self._selected_ids()
         by_id = {t.id: t for t in self._transactions()}
         clicked = by_id.get(int(row))
